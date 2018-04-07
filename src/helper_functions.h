@@ -61,10 +61,13 @@ inline double dist(double x1, double y1, double x2, double y2) {
 /*
  * Calculates the probability of x for 1-dim Gaussian with mean mu and var. sigma
  */
+
+/*
 double gaussian(double mu, double sigma, double x)
 {
-  return exp(- ((mu - x) * (mu - x)) / (sigma * sigma) / 2.0) / sqrt(2.0 * pi * (sigma * sigma));
+  return exp(- ((mu - x) * (mu - x)) / (sigma * sigma) / 2.0) / sqrt(2.0 * M_PI * (sigma * sigma));
 }
+*/
 
 
 inline double * getError(double gt_x, double gt_y, double gt_theta, double pf_x, double pf_y, double pf_theta) {

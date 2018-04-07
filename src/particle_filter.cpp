@@ -44,7 +44,7 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
     particle.x = px;
     particle.y = py;
     particle.theta = pt;
-    particle.weight = 1.0 / num_particles;
+    particle.weight = 1.0;
 
     particles.push_back(particle);
   }
@@ -113,7 +113,7 @@ void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::ve
       if (dist < min_distance)
       {
         min_distance = dist;
-        observations[i].id = i;
+        observations[i].id = j;
       }
     }
   }
@@ -234,7 +234,7 @@ void ParticleFilter::resample() {
   for (int i = 0; i < particles.size(); i++)
   {
     beta += dist_r(gen);
-    while(particles[index].weight < beta)
+    while(particles[index].weight > beta)
     {
       beta -= particles[index].weight;
       index = (index + 1) % particles.size();

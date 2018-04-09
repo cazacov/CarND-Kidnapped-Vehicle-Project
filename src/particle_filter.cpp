@@ -69,15 +69,15 @@ void ParticleFilter::prediction(double delta_t, double std_pos[], double velocit
     double y = particles[i].y;
     double theta = particles[i].theta;
 
-    if (fabs(yaw_rate) > 1E-4) {
+    if (fabs(yaw_rate) > 1E-6) {
       x += velocity  / yaw_rate * (sin(theta + yaw_rate * delta_t) - sin(theta));
       y += velocity  / yaw_rate * (cos(theta) - cos(theta + yaw_rate*delta_t));
+      theta += yaw_rate * delta_t;
     }
     else {
       x += velocity * delta_t * cos(theta);
       y += velocity * delta_t * sin(theta);
     }
-    theta += yaw_rate * delta_t;
 
     // add random noise
     x += dist_x(gen);
@@ -104,7 +104,7 @@ void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::ve
     double ox = observations[i].x;
     double oy = observations[i].y;
 
-    double min_distance = INT32_MAX;  // some big number
+    double min_distance = std::numeric_limits<double>::max();  // some big number
 
     for (int j = 0; j < predicted.size(); j++) {
       double dx = predicted[j].x - ox;
@@ -113,7 +113,7 @@ void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::ve
       if (dist < min_distance)
       {
         min_distance = dist;
-        observations[i].id = j;
+        observations[i].id = predicted[j].id;
       }
     }
   }
@@ -133,64 +133,85 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 	//   3.33
 	//   http://planning.cs.uiuc.edu/node99.html
 
-  // non-constant version of the vector
-  std::vector<LandmarkObs> obs = observations;
-
-
   double w_sum = 0;
+  weights.clear();
 
   for (int i = 0; i < num_particles; i++)
   {
 
-    // Predict map landmarks in car's coordinate system
-
+    // Predict landmarks in car's sensor range
     std::vector<LandmarkObs> predictions;
+
     for (int j = 0; j < map_landmarks.landmark_list.size(); j++)
     {
       double lx = map_landmarks.landmark_list[j].x_f;
       double ly = map_landmarks.landmark_list[j].y_f;
       double lid = map_landmarks.landmark_list[j].id_i;
 
-      // translate
-      double px = lx - particles[i].x;
-      double py = ly - particles[i].y;
+      //
+      double dx = lx - particles[i].x;
+      double dy = ly - particles[i].y;
 
-      // rotate
-      double rtheta = -particles[i].theta;   //
 
-      LandmarkObs prediction = LandmarkObs();
-      prediction.id = lid;
-      prediction.x = px * cos(rtheta) + py * sin(rtheta);
-      prediction.y = -px * sin(rtheta) + py * cos(rtheta);
-      predictions.push_back(prediction);
+      double distance = sqrt(dx * dx + dy * dy);
+      if (distance <= sensor_range) {
+        LandmarkObs prediction;
+        prediction.id = lid;
+        prediction.x = lx;
+        prediction.y = ly;
+        predictions.push_back(prediction);
+      }
     }
 
-    double weight = 1.0;
+    // Map observations in particles's coordinate system
+    std::vector<LandmarkObs> obs;
+
+    for (int j = 0; j < observations.size(); j++)
+    {
+      double obs_x = observations[j].x;
+      double obs_y = observations[j].y;
+
+      double theta = particles[i].theta;
+
+      double trans_x = particles[i].x + obs_x * cos(theta) + obs_y * sin(theta);
+      double trans_y = particles[i].y - obs_x * sin(theta) + obs_y * cos(theta);
+
+      LandmarkObs trans_obs = LandmarkObs();
+      trans_obs.id = observations[j].id;
+      trans_obs.x = trans_x;
+      trans_obs.y = trans_y;
+      obs.push_back(trans_obs);
+    }
 
     // find nearest observations
-
     dataAssociation(predictions, obs);
 
     double sig_x = std_landmark[0];
     double sig_y = std_landmark[1];
 
+    // Caluclate particle's weight
+    double weight = 1.0;
+
     for (int j = 0; j < obs.size(); j++) {
       LandmarkObs observation = obs[j];
-      LandmarkObs prediction = predictions[obs[j].id];
+
+      LandmarkObs prediction;
+
+      for (int k = 0; k < predictions.size(); k++) {
+        if (predictions[k].id == observation.id) {
+          prediction = predictions[k];
+          break;
+        }
+      }
 
       double dx = observation.x - prediction.x;
       double dy = observation.y - prediction.y;
-      double distance = sqrt(dx * dx + dy * dy);
-
-      if (distance > sensor_range)
-      {
-        // Landmark is too far. Scale it to sensor range
-        dx *= sensor_range / distance;
-        dy *= sensor_range / distance;
-      }
 
       // Calculate Multivariate-Gaussian probability density
-      double multi_prob = exp( -(dx * dx / (2 * sig_x * sig_x) + dy*dy / (2 * sig_y * sig_y))) / (2 * M_PI * sig_x * sig_y);
+      double gauss_norm = 1.0 / (2.0 * M_PI * sig_x * sig_y);
+      double exponent = dx * dx / (2 * sig_x * sig_x) + dy*dy / (2 * sig_y * sig_y);
+
+      double multi_prob = gauss_norm * exp(-exponent);
 
       weight *= multi_prob;
     }
@@ -204,6 +225,7 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
   if (w_sum > 1E-6) {
     for (int i = 0; i < num_particles; i++) {
       particles[i].weight /= w_sum;
+      weights.push_back(particles[i].weight);
     }
   }
 }
@@ -216,9 +238,8 @@ void ParticleFilter::resample() {
   default_random_engine gen;
 
   uniform_int_distribution<int> dist_i(0, particles.size()-1);
-
   int index = dist_i(gen);
-  double beta = 0;
+
 
   double max_weight = 0;
   for (int i = 0; i < particles.size(); i++)
@@ -231,16 +252,25 @@ void ParticleFilter::resample() {
 
   std::vector<Particle> new_particles;
 
+  double beta = 0;
   for (int i = 0; i < particles.size(); i++)
   {
     beta += dist_r(gen);
-    while(particles[index].weight > beta)
+    while(beta > particles[index].weight)
     {
       beta -= particles[index].weight;
       index = (index + 1) % particles.size();
     }
-    new_particles.push_back(particles[index]);
+    Particle newParticle;
+    newParticle.id = i;
+    newParticle.x = particles[index].x;
+    newParticle.y = particles[index].y;
+    newParticle.theta = particles[index].theta;
+    newParticle.weight = particles[index].weight;
+
+    new_particles.push_back(newParticle);
   }
+
   particles = new_particles;
 }
 

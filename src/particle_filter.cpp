@@ -111,25 +111,19 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 	//   3.33
 	//   http://planning.cs.uiuc.edu/node99.html
 
-  for (int i = 0; i < num_particles; i++)
+  for (auto &particle : particles)
   {
-    Particle particle = particles[i];
-
     // Predict landmarks in car's sensor range
     std::vector<LandmarkObs> predictions;
 
-    for (int j = 0; j < map_landmarks.landmark_list.size(); j++)
+    for (auto &landmark : map_landmarks.landmark_list)
     {
-      double lx = map_landmarks.landmark_list[j].x_f;
-      double ly = map_landmarks.landmark_list[j].y_f;
-      double lid = map_landmarks.landmark_list[j].id_i;
-
-      double distance = dist(lx, ly, particle.x, particle.y);
+      double distance = dist(landmark.x_f, landmark.y_f, particle.x, particle.y);
       if (distance <= sensor_range) {
         LandmarkObs prediction;
-        prediction.id = lid;
-        prediction.x = lx;
-        prediction.y = ly;
+        prediction.id = landmark.id_i;
+        prediction.x = landmark.x_f;
+        prediction.y = landmark.y_f;
         predictions.push_back(prediction);
       }
     }
@@ -137,20 +131,12 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
     // Map observations in particles's coordinate system
     std::vector<LandmarkObs> obs;
 
-    for (int j = 0; j < observations.size(); j++)
+    for (auto &observation : observations)
     {
-      double obs_x = observations[j].x;
-      double obs_y = observations[j].y;
+      double trans_x = particle.x + observation.x * cos(particle.theta) - observation.y* sin(particle.theta);
+      double trans_y = particle.y + observation.x * sin(particle.theta) + observation.y * cos(particle.theta);
 
-      double theta = particle.theta;
-
-      double trans_x = particle.x + obs_x * cos(theta) - obs_y * sin(theta);
-      double trans_y = particle.y + obs_x * sin(theta) + obs_y * cos(theta);
-
-      LandmarkObs trans_obs = LandmarkObs();
-      trans_obs.id = observations[j].id;
-      trans_obs.x = trans_x;
-      trans_obs.y = trans_y;
+      LandmarkObs trans_obs = { observation.id, trans_x, trans_y};
       obs.push_back(trans_obs);
     }
 
@@ -163,13 +149,11 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
     // Caluclate particle's weight
     double weight = 1.0;
 
-    particles[i].associations.clear();
-    particles[i].sense_x.clear();
-    particles[i].sense_y.clear();
+    particle.associations.clear();
+    particle.sense_x.clear();
+    particle.sense_y.clear();
 
-    for (int j = 0; j < obs.size(); j++) {
-
-      LandmarkObs observation = obs[j];
+    for (auto &observation : obs) {
 
       LandmarkObs prediction;
       for (int k = 0; k < predictions.size(); k++) {
@@ -179,9 +163,9 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
         }
       }
 
-      particles[i].associations.push_back(prediction.id);
-      particles[i].sense_x.push_back(observation.x);
-      particles[i].sense_y.push_back(observation.y);
+      particle.associations.push_back(prediction.id);
+      particle.sense_x.push_back(observation.x);
+      particle.sense_y.push_back(observation.y);
 
       double dx = observation.x - prediction.x;
       double dy = observation.y - prediction.y;
@@ -194,40 +178,25 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 
       weight *= multi_prob;
     }
-    particles[i].weight = weight;
+    particle.weight = weight;
   }
 
   // normalize weights
 
   double w_sum = 0;
-  for (int i = 0; i < num_particles; i++) {
-    w_sum +=  particles[i].weight;
+  for (auto &particle : particles) {
+    w_sum +=  particle.weight;
   }
 
-  // find best article
-  double highest_weight = -1.0;
-  Particle best_particle;
-  int best_index;
-  for (int i = 0; i < num_particles; ++i) {
-    if (particles[i].weight > highest_weight) {
-      highest_weight = particles[i].weight;
-      best_particle = particles[i];
-      best_index = i;
-    }
-  }
-
-  weights.clear();
   if (w_sum > 0) {
-    for (int i = 0; i < num_particles; i++) {
-      particles[i].weight /= w_sum;
-      weights.push_back(particles[i].weight);
+    for (auto &particle : particles) {
+      particle.weight /= w_sum;
     }
   }
   else {
-    // That should not happen
-    for (int i = 0; i < num_particles; i++) {
-      particles[i].weight = 0;
-      weights.push_back(particles[i].weight);
+    // That should not happen !
+    for (auto &particle : particles) {
+      particle.weight = 1;
     }
   }
 }
@@ -237,17 +206,16 @@ void ParticleFilter::resample() {
 	// NOTE: You may find std::discrete_distribution helpful here.
 	//   http://en.cppreference.com/w/cpp/numeric/random/discrete_distribution
 
-
   // Use resampling wheel algorithm
 
   uniform_int_distribution<int> dist_i(0, num_particles - 1);
   int index = dist_i(gen);
 
   double max_weight = 0;
-  for (int i = 0; i < num_particles; i++)
+  for (auto &particle: particles)
   {
-    if (particles[i].weight > max_weight) {
-      max_weight = particles[i].weight;
+    if (particle.weight > max_weight) {
+      max_weight = particle.weight;
     }
   }
   uniform_real_distribution<double> dist_r(0, 2 * max_weight);

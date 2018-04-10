@@ -27,11 +27,11 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
 	// Add random Gaussian noise to each particle.
 	// NOTE: Consult particle_filter.h for more information about this method (and others in this file).
 
-  num_particles = 1000;
+  num_particles = 20;
 
-  normal_distribution<double> dist_x(x, std[0]);
-  normal_distribution<double> dist_y(y, std[1]);
-  normal_distribution<double> dist_theta(theta, std[2]);
+  normal_distribution<double> dist_x(x, std[0] * 2);
+  normal_distribution<double> dist_y(y, std[1] * 2);
+  normal_distribution<double> dist_theta(theta, std[2] * 2);
 
   for (int i = 0; i < num_particles; i++)
   {
@@ -156,8 +156,8 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 
       double theta = particle.theta;
 
-      double trans_x = particle.x + obs_x * cos(theta) + obs_y * sin(theta);
-      double trans_y = particle.y - obs_x * sin(theta) + obs_y * cos(theta);
+      double trans_x = particle.x + obs_x * cos(theta) - obs_y * sin(theta);
+      double trans_y = particle.y + obs_x * sin(theta) + obs_y * cos(theta);
 
       LandmarkObs trans_obs = LandmarkObs();
       trans_obs.id = observations[j].id;
@@ -175,6 +175,10 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
     // Caluclate particle's weight
     double weight = 1.0;
 
+    particles[i].associations.clear();
+    particles[i].sense_x.clear();
+    particles[i].sense_y.clear();
+
     for (int j = 0; j < obs.size(); j++) {
 
       LandmarkObs observation = obs[j];
@@ -186,6 +190,10 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
           break;
         }
       }
+
+      particles[i].associations.push_back(prediction.id);
+      particles[i].sense_x.push_back(observation.x);
+      particles[i].sense_y.push_back(observation.y);
 
       double dx = observation.x - prediction.x;
       double dy = observation.y - prediction.y;
@@ -207,6 +215,20 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
   for (int i = 0; i < num_particles; i++) {
     w_sum +=  particles[i].weight;
   }
+
+  // find best article
+  double highest_weight = -1.0;
+  Particle best_particle;
+  int best_index;
+  for (int i = 0; i < num_particles; ++i) {
+    if (particles[i].weight > highest_weight) {
+      highest_weight = particles[i].weight;
+      best_particle = particles[i];
+      best_index = i;
+    }
+  }
+
+  cout << "Best particle: "  << best_index << " x:" << best_particle.x << " y:" << best_particle.y << endl;
 
   weights.clear();
   if (w_sum > 0) {
@@ -254,14 +276,7 @@ void ParticleFilter::resample() {
       beta -= particles[index].weight;
       index = (index + 1) % num_particles;
     }
-    Particle newParticle;
-    newParticle.id = i;
-    newParticle.x = particles[index].x;
-    newParticle.y = particles[index].y;
-    newParticle.theta = particles[index].theta;
-    newParticle.weight = particles[index].weight;
-
-    new_particles.push_back(newParticle);
+    new_particles.push_back(particles[index]);
   }
 
   particles = new_particles;

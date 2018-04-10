@@ -29,9 +29,9 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
 
   num_particles = 20;
 
-  normal_distribution<double> dist_x(x, std[0] * 2);
-  normal_distribution<double> dist_y(y, std[1] * 2);
-  normal_distribution<double> dist_theta(theta, std[2] * 2);
+  normal_distribution<double> dist_x(x, std[0]);
+  normal_distribution<double> dist_y(y, std[1]);
+  normal_distribution<double> dist_theta(theta, std[2]);
 
   for (int i = 0; i < num_particles; i++)
   {
@@ -57,30 +57,22 @@ void ParticleFilter::prediction(double delta_t, double std_pos[], double velocit
   normal_distribution<double> dist_y(0, std_pos[1]);
   normal_distribution<double> dist_theta(0, std_pos[2]);
 
-  for (int i = 0; i < num_particles; i ++)  {
-    double x = particles[i].x;
-    double y = particles[i].y;
-    double theta = particles[i].theta;
+  for (auto &particle : particles)  {
 
     if (fabs(yaw_rate) > EPS) {
-      x += velocity  / yaw_rate * (sin(theta + yaw_rate * delta_t) - sin(theta));
-      y += velocity  / yaw_rate * (cos(theta) - cos(theta + yaw_rate * delta_t));
-      theta += yaw_rate * delta_t;
+      particle.x += velocity  / yaw_rate * (sin(particle.theta + yaw_rate * delta_t) - sin(particle.theta));
+      particle.y += velocity  / yaw_rate * (cos(particle.theta) - cos(particle.theta + yaw_rate * delta_t));
+      particle.theta += yaw_rate * delta_t;
     }
     else {
-      x += velocity * delta_t * cos(theta);
-      y += velocity * delta_t * sin(theta);
+      particle.x += velocity * delta_t * cos(particle.theta);
+      particle.y += velocity * delta_t * sin(particle.theta);
     }
 
     // add random noise
-    x += dist_x(gen);
-    y += dist_y(gen);
-    theta += dist_theta(gen);
-
-    // Update particle coordinates
-    particles[i].x = x;
-    particles[i].y = y;
-    particles[i].theta = theta;
+    particle.x += dist_x(gen);
+    particle.y += dist_y(gen);
+    particle.theta += dist_theta(gen);
   }
 }
 
@@ -90,20 +82,16 @@ void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::ve
 	// NOTE: this method will NOT be called by the grading code. But you will probably find it useful to 
 	//   implement this method and use it as a helper during the updateWeights phase.
 
-  for (int i = 0; i < observations.size(); i++)
+  for (auto &observation : observations)
   {
-    LandmarkObs observation = observations[i];
-
     double min_distance = std::numeric_limits<double>::max();  // some big number
 
-    for (int j = 0; j < predicted.size(); j++) {
-      LandmarkObs prediction = predicted[j];
-
+    for (auto &prediction : predicted) {
       double distance = dist(observation.x, observation.y, prediction.x, prediction.y);
       if (distance < min_distance)
       {
         min_distance = distance;
-        observations[i].id = predicted[j].id;
+        observation.id = prediction.id;
       }
     }
   }
@@ -228,8 +216,6 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
     }
   }
 
-  cout << "Best particle: "  << best_index << " x:" << best_particle.x << " y:" << best_particle.y << endl;
-
   weights.clear();
   if (w_sum > 0) {
     for (int i = 0; i < num_particles; i++) {
@@ -251,17 +237,18 @@ void ParticleFilter::resample() {
 	// NOTE: You may find std::discrete_distribution helpful here.
 	//   http://en.cppreference.com/w/cpp/numeric/random/discrete_distribution
 
+
+  // Use resampling wheel algorithm
+
   uniform_int_distribution<int> dist_i(0, num_particles - 1);
   int index = dist_i(gen);
 
   double max_weight = 0;
-  double sum_weight = 0;
   for (int i = 0; i < num_particles; i++)
   {
     if (particles[i].weight > max_weight) {
       max_weight = particles[i].weight;
     }
-    sum_weight += particles[i].weight;
   }
   uniform_real_distribution<double> dist_r(0, 2 * max_weight);
 
